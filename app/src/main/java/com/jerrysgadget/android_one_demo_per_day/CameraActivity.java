@@ -1,6 +1,7 @@
 package com.jerrysgadget.android_one_demo_per_day;
 
 import android.app.Activity;
+import android.graphics.ImageFormat;
 import android.hardware.Camera;
 import android.os.Bundle;
 import android.util.Log;
@@ -15,13 +16,15 @@ import java.util.HashSet;
 import java.util.List;
 
 
-public class CameraActivity extends Activity implements SurfaceHolder.Callback, Camera.ErrorCallback {
+public class CameraActivity extends Activity implements SurfaceHolder.Callback, Camera.ErrorCallback, Camera.PreviewCallback {
 
     private Camera cameraDevice;
     private SurfaceView surfaceView;
     private SurfaceHolder surfaceHolder;
     private boolean surfaceReady = false;
     private boolean cameraInPreview = false;
+
+    private byte[] cameraPreviewBuf;
 
     private final String LOG_TAG = getClass().getSimpleName();
 
@@ -60,8 +63,11 @@ public class CameraActivity extends Activity implements SurfaceHolder.Callback, 
             Log.d(LOG_TAG,"supported preview size: " + sizeToString(s));
         }
 
-        Camera.Size smallest = smallest(previewSizes);
-        parameters.setPreviewSize(smallest.width, smallest.height);
+        Camera.Size cameraSize = targetSize(previewSizes, 640, 480);
+        if (cameraSize == null)
+            cameraSize = smallest(previewSizes);
+
+        parameters.setPreviewSize(cameraSize.width, cameraSize.height);
 
         List<int[]> ranges = parameters.getSupportedPreviewFpsRange();
         for (int[] r : ranges) {
@@ -85,13 +91,24 @@ public class CameraActivity extends Activity implements SurfaceHolder.Callback, 
                 parameters.set("auto-exposure", "center-weighted");
             }
         }
+
         cameraDevice.setParameters(parameters);
         Log.d(LOG_TAG, "current preview size: " + sizeToString(parameters.getPreviewSize()));
 
         this.setCameraDisplayOrientation();
 
+        final int previewFormat = parameters.getPreviewFormat();
+        final int bitsPerPixel = ImageFormat.getBitsPerPixel(previewFormat);
+
+        cameraDevice.setPreviewCallbackWithBuffer(this);
+        final int bufSize = bitsPerPixel*cameraSize.width*cameraSize.height/8;
+        cameraPreviewBuf = new byte[bufSize];
+        Log.d(LOG_TAG, "will use buffer of size(bytes): " + bufSize + ", bits per pixel: " + bitsPerPixel);
+        cameraDevice.addCallbackBuffer(new byte[bufSize]);
+
         Log.d(LOG_TAG, parameters.flatten());
     }
+
 
     private void releaseCamera() {
         if (cameraDevice == null)
@@ -121,6 +138,17 @@ public class CameraActivity extends Activity implements SurfaceHolder.Callback, 
         this.cameraDevice.stopPreview();
         this.cameraInPreview = false;
     }
+
+    private Camera.Size targetSize(List<Camera.Size> sizes, int width, int height) {
+        for (Camera.Size s : sizes) {
+            if (s.width == width  && s.height == height) {
+                return s;
+            }
+        }
+
+        return null;
+    }
+
 
     private Camera.Size smallest(List<Camera.Size> sizes) {
         long pixels = Long.MAX_VALUE;
@@ -242,5 +270,28 @@ public class CameraActivity extends Activity implements SurfaceHolder.Callback, 
         }
 
         return -1;
+    }
+
+    private long previewFramesCounter;
+    private long previewTimerCounter = System.currentTimeMillis();
+    @Override
+    public void onPreviewFrame(byte[] bytes, Camera camera) {
+//        Log.d(LOG_TAG, "got preview bytes: " + bytes.length);
+        if (cameraDevice == null)
+            return;
+
+        previewFramesCounter++;
+        cameraDevice.addCallbackBuffer(this.cameraPreviewBuf);
+
+        if (previewFramesCounter >= 10) {
+            long now = System.currentTimeMillis();
+            double msSpent = now - previewTimerCounter;
+            double fps = 1000*previewFramesCounter/msSpent;
+
+            previewFramesCounter = 0;
+            previewTimerCounter = now;
+
+            Log.d(LOG_TAG, "ms spent: " + msSpent + ", preview fps real: " + fps + ", buffer size: " + bytes.length);
+        }
     }
 }
