@@ -61,7 +61,7 @@
     </content>
     <orderEntry type="jdk" jdkName="Android API 20 Platform" jdkType="Android SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="library" exported="" name="android-logging-log4j-1.0.2" level="project" />
+    <orderEntry type="library" exported="" name="commons-lang-2.3" level="project" />
   </component>
 </module>
 

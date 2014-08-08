@@ -3,6 +3,9 @@ package com.jerrysgadget.android_one_demo_per_day;
 import android.app.Activity;
 import android.graphics.ImageFormat;
 import android.hardware.Camera;
+import android.media.MediaCodec;
+import android.media.MediaCodecInfo;
+import android.media.MediaFormat;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Menu;
@@ -23,6 +26,7 @@ public class CameraActivity extends Activity implements SurfaceHolder.Callback, 
     private SurfaceHolder surfaceHolder;
     private boolean surfaceReady = false;
     private boolean cameraInPreview = false;
+    private MediaCodec cameraVideoEncoder;
 
     private byte[] cameraPreviewBuf;
 
@@ -36,7 +40,12 @@ public class CameraActivity extends Activity implements SurfaceHolder.Callback, 
         this.surfaceView = (SurfaceView) findViewById(R.id.main_surface);
         this.surfaceHolder = surfaceView.getHolder();
         this.surfaceHolder.addCallback(this);
+
+        MediaCodecHelper.init();
     }
+
+    private Camera.Size cameraSize;
+    private final String videoType = "video/mp4v-es";
 
     private void setupCamera() {
         if (cameraDevice!=null)
@@ -63,7 +72,7 @@ public class CameraActivity extends Activity implements SurfaceHolder.Callback, 
             Log.d(LOG_TAG,"supported preview size: " + sizeToString(s));
         }
 
-        Camera.Size cameraSize = targetSize(previewSizes, 640, 480);
+        cameraSize = targetSize(previewSizes, 640, 480);
         if (cameraSize == null)
             cameraSize = smallest(previewSizes);
 
@@ -106,7 +115,26 @@ public class CameraActivity extends Activity implements SurfaceHolder.Callback, 
         Log.d(LOG_TAG, "will use buffer of size(bytes): " + bufSize + ", bits per pixel: " + bitsPerPixel);
         cameraDevice.addCallbackBuffer(new byte[bufSize]);
 
-        Log.d(LOG_TAG, parameters.flatten());
+        String[] paramArr = parameters.flatten().split(";");
+        for (String p : paramArr) {
+            Log.d(LOG_TAG, "camera setting: " + p);
+        }
+
+        MediaCodecInfo ci = MediaCodecHelper.encoderOfType(videoType);
+        if (ci == null) {
+            Log.w(LOG_TAG, "can not create video codec for encoder.");
+            return;
+        }
+
+        cameraVideoEncoder = MediaCodecHelper.codecFromCodecInfo(ci);
+        MediaFormat format = MediaFormat.createVideoFormat(videoType, 480, 360);
+//        format.setString(MediaFormat.KEY_MIME, videoType);
+        format.setInteger(MediaFormat.KEY_BIT_RATE, 500*1000);
+        format.setInteger(MediaFormat.KEY_FRAME_RATE, 15);
+        format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar);
+        format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5);
+
+        cameraVideoEncoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
     }
 
 
@@ -118,6 +146,9 @@ public class CameraActivity extends Activity implements SurfaceHolder.Callback, 
 
         cameraInPreview = false;
         cameraDevice = null;
+
+        if (cameraVideoEncoder != null)
+            cameraVideoEncoder.release();
     }
 
     private void startCamera() {
